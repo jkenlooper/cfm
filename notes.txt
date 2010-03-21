@@ -1,0 +1,27 @@
+
+cloudfile.py
+flags/options:
+  --update 
+    Update any that are different. Any that are different and have a different owner; get a copy of the one on server and add "owner_name." in front of it. Any that no longer exist in the cloud rename the file with "deleted." in front of it. 
+  --steal
+    any files that are different and have a different owner; replace file in cloud and change owner.
+  --delete
+    Remove file from cloud and local directory
+  --clean
+    delete file just from local directory and leave the yaml untouched
+  --get-new
+    get all new files from cloud that aren't already in the local directory
+    
+args:
+  files
+  ###--add-globs="*.jpg,*.gif,images/*.png"
+
+
+meta tags:
+  modified date:
+  owner:
+  hash:
+    
+
+Recursivly go through the directory tree and find all targetted files.  
+Test if they are already in the cloud.  
