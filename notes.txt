@@ -11,10 +11,17 @@ flags/options:
     delete file just from local directory and leave the yaml untouched
   --get-new
     get all new files from cloud that aren't already in the local directory
+  --add
+    add all files listed and upload them to the cloud. create the *.cloudfile.yaml files for each.
+
+  --recursive
+    for any directories listed in args find all the *.cloudfile.yaml and do the above operation
+
+  --config
+    specify a different config file other then the default ~.cloudfile.config one.
     
 args:
-  files
-  ###--add-globs="*.jpg,*.gif,images/*.png"
+  files and/or directories
 
 
 meta tags:
@@ -22,6 +29,12 @@ meta tags:
   owner:
   hash:
     
+yaml:
+  # name_of_file.ext.cloudfile.yaml
+  container:
+  file_name:
+  modified:
+  hash:
+  owner:
+  uri:
 
-Recursivly go through the directory tree and find all targetted files.  
-Test if they are already in the cloud.  
