@@ -35,19 +35,17 @@ class File(object):
 
 class Controller(object):
   """ a Controller that works in a single directory """
-  def __init__(self, owner_name, login_name, api_key, directory):
+  def __init__(self, owner_name, login_name, api_key):
     self.owner_name = owner_name
-    self.directory = directory
     #TODO: get a connection to the cloud using the api_key and login_name
   
   @Property
-  def directory():
-    doc = "directory to operate in"
+  def files():
+    doc = "files to operate on. includes paths"
     def fget(self):
-      return self._directory
-    def fset(self, dir):
-      #TODO: check to see if the dir exists and is a directory
-      self._directory = dir
+      return self._files
+    def fset(self, files):
+      self._files = files
     return locals()
 
   def add_files(self, container_name, file_list):
@@ -100,4 +98,28 @@ if __name__ == "__main__":
     parser.error("Must specify an action")
   elif options.action == ACTION_ADD and not options.container:
     parser.error("Must set a container name when adding files")
+
+  def get_files(items, levels=0, root=""): #TODO: use os.walk here?
+    " walk through dir and retrieve all files "
+    folders = []
+    files = []
+    for item in items:
+      path_to_item = os.path(root,item)
+      if os.path.isdir(path_to_item):
+        folders.append(item)
+      else:
+        files.append(path_to_item)
+    if folders:
+      for folder in folders:
+        get_files(os.listdir(
+
+  levels = 0
+  if not options.recursive:
+    levels = 1
+  files = get_files(args, levels)
+  c = Controller(owner_name, login_name, api_key)
+  c.files = files
+  #TODO: do operation using the controller
+
+
 
