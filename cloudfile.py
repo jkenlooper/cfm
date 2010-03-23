@@ -3,6 +3,7 @@
 
 from optparse import OptionParser
 import yaml
+import os
 ACTION_ADD = 'add'
 ACTION_GET_NEW = 'get-new'
 ACTION_UPDATE = 'update'
@@ -99,24 +100,25 @@ if __name__ == "__main__":
   elif options.action == ACTION_ADD and not options.container:
     parser.error("Must set a container name when adding files")
 
-  def get_files(items, levels=0, root=""): #TODO: use os.walk here?
+  def get_files(items, max_level=0):
     " walk through dir and retrieve all files "
-    folders = []
     files = []
     for item in items:
-      path_to_item = os.path(root,item)
-      if os.path.isdir(path_to_item):
-        folders.append(item)
+      if os.path.isdir(item):
+        for root, dir, file_names in os.walk(item, topdown=False):
+          level = len(root.split('/'))
+          if not max_level or max_level >= level:
+            for f in file_names:
+              files.append(os.path.join(root, f))
       else:
-        files.append(path_to_item)
-    if folders:
-      for folder in folders:
-        get_files(os.listdir(
+        files.append(item)
+    return files
 
-  levels = 0
+
+  max_level = 0
   if not options.recursive:
-    levels = 1
-  files = get_files(args, levels)
+    max_level = 1
+  files = get_files(args, max_level)
   c = Controller(owner_name, login_name, api_key)
   c.files = files
   #TODO: do operation using the controller
