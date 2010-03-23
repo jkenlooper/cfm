@@ -3,8 +3,14 @@
 
 from optparse import OptionParser
 import yaml
+ACTION_ADD = 'add'
+ACTION_GET_NEW = 'get-new'
+ACTION_UPDATE = 'update'
+ACTION_CLEAN = 'clean'
+ACTION_DELETE = 'delete'
+ACTION_STEAL = 'steal'
 
-ACTIONS = ('add', 'get-new', 'update', 'clean', 'delete', 'steal')
+ACTIONS = (ADD, GET_NEW, UPDATE, CLEAN, DELETE, STEAL)
 
 def Property(func):
   """ http://adam.gomaa.us/blog/the-python-property-builtin/ """
@@ -13,6 +19,7 @@ def Property(func):
 class File(object):
   """ a file that is located on the cloud and locally """
   def __init__(self, container_name, file_name):
+    self._container = 'a_container'
     self._owner = 'someone'
     self._modified_date = 'today'
     self._hash = 'imahash'
@@ -26,7 +33,16 @@ class File(object):
       self._owner = owner_name
     return locals()
 
-if __name__ == "__main__" :
+class Controller(object):
+  """ a Controller """
+  def __init__(self, owner_name, login_name, api_key):
+    #TODO: set these
+    pass
+
+  def add_files(container_name, file_list):
+    pass
+
+if __name__ == "__main__":
   parser = OptionParser(usage="%%prog --action [%s] [options] [files and or directories]" % "|".join(ACTIONS), version="%prog 0.1", description="add files to the cloud")
 
   parser.add_option("--action", "-a",
@@ -45,6 +61,14 @@ if __name__ == "__main__" :
 
   (options, args) = parser.parse_args()
 
-  if not args :
+  if not args:
     parser.error("No files or directories specified.")
+
+  if not options.action:
+    parser.error("Must specify an action")
+  elif options.action == ACTION_ADD and not options.container:
+    parser.error("Must set a container name when adding files")
+
+
+
 
