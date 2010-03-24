@@ -24,15 +24,29 @@ class File(object):
     self._path_to_file = path_to_file
     self._yaml_file = 'path_to_file.cloudfile.yaml'
     #if yaml exists then get the other data below
-    self._get_meta()
+    self._get_yaml()
     #else create meta
 
-  def _get_meta(self):
-    """ get cloud meta data of this file and yaml data """
+  def _get_yaml(self):
+    """ get local yaml data of this file """
     self.container = 'a_container'
     self.owner = 'someone'
+    self._modified_date = 'today' # compare local file hash with yaml hash and set new modified if different
+    self._hash = 'imahash'
+
+  def _set_yaml(self, container_name, owner):
+    self.container = container_name
+    self.owner = owner
     self._modified_date = 'today'
     self._hash = 'imahash'
+    #TODO: write yaml file
+  create_yaml = _set_yaml
+  def set_meta_from_yaml(self):
+    """ send meta data to the cloud file object """
+    #_set_meta(yaml_data)
+    pass
+  def _set_meta(self, container_name, owner):
+    """ set meta ... """
 
   @Property
   def container_name():
@@ -73,6 +87,11 @@ class Controller(object):
 
   def add_files(self, container_name, file_list):
     """ add all the files in file_list and create a cloudfile.yaml for each. """
+    #TODO: create container_name if it isn't in cloud
+    for file_path in file_list:
+      f = File(file_path)
+      f.create_yaml(container_name, self.owner_name)
+      f.set_meta_from_yaml()
     pass
   def get_new(self):
     """ search for cloudfile.yaml files and compare the hashes and download new if different or not existant. """
