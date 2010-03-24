@@ -11,20 +11,38 @@ ACTION_CLEAN = 'clean'
 ACTION_DELETE = 'delete'
 ACTION_STEAL = 'steal'
 
-ACTIONS = (ADD, GET_NEW, UPDATE, CLEAN, DELETE, STEAL)
+ACTIONS = (ACTION_ADD, ACTION_GET_NEW, ACTION_UPDATE, ACTION_CLEAN, ACTION_DELETE, ACTION_STEAL)
 
 def Property(func):
   """ http://adam.gomaa.us/blog/the-python-property-builtin/ """
   return property(**func())
 
 class File(object):
-  """ a file that is located on the cloud and locally """
-  def __init__(self, container_name, file_name):
-    self._container = 'a_container'
-    self._owner = 'someone'
+  """ a file that is located on the cloud and has a yaml file locally """
+  def __init__(self, path_to_file):
+    self._file_name = os.path.basename(path_to_file) # basename?
+    self._path_to_file = path_to_file
+    self._yaml_file = 'path_to_file.cloudfile.yaml'
+    #if yaml exists then get the other data below
+    self._get_meta()
+    #else create meta
+
+  def _get_meta(self):
+    """ get cloud meta data of this file and yaml data """
+    self.container = 'a_container'
+    self.owner = 'someone'
     self._modified_date = 'today'
     self._hash = 'imahash'
 
+  @Property
+  def container_name():
+    doc = "name of the container in the cloud that this file is in."
+    def fget(self):
+      return self._container
+    def fset(self, container_name):
+      self._container_name = container_name
+    return locals()
+  
   @Property
   def owner():
     doc = "owner of the file"
@@ -33,6 +51,10 @@ class File(object):
     def fset(self, owner_name):
       self._owner = owner_name
     return locals()
+
+  def upload_to_cloud(self):
+    """ add the file to the cloud """
+    pass
 
 class Controller(object):
   """ a Controller that works in a single directory """
@@ -84,7 +106,7 @@ if __name__ == "__main__":
   parser.add_option("--recursive", "-R",
       action="store_true",
       help="For any directories listed in args find all the *.cloudfile.yaml")
-  parser.container("--container", "-c",
+  parser.add_option("--container", "-c",
       action="store",
       type="string",
       help="Set the name of the container to work in")
@@ -105,7 +127,7 @@ if __name__ == "__main__":
     files = []
     for item in items:
       if os.path.isdir(item):
-        for root, dir, file_names in os.walk(item, topdown=False):
+        for root, dir, file_names in os.walk(item, topdown=True):
           level = len(root.split('/'))
           if not max_level or max_level >= level:
             for f in file_names:
@@ -119,9 +141,11 @@ if __name__ == "__main__":
   if not options.recursive:
     max_level = 1
   files = get_files(args, max_level)
+  owner_name, login_name, api_key = 'nothing', 'nothing', 'nothing'
   c = Controller(owner_name, login_name, api_key)
   c.files = files
   #TODO: do operation using the controller
+  print ", ".join(files)
 
 
 
