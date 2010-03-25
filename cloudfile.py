@@ -1,8 +1,7 @@
 #!/usr/bin/env python
-"""use yaml files as placeholders for cloud files"""
+"""use cloudfile meta files as placeholders for cloud files"""
 
 from optparse import OptionParser
-import yaml
 import os
 ACTION_ADD = 'add'
 ACTION_GET_NEW = 'get-new'
@@ -13,38 +12,73 @@ ACTION_STEAL = 'steal'
 
 ACTIONS = (ACTION_ADD, ACTION_GET_NEW, ACTION_UPDATE, ACTION_CLEAN, ACTION_DELETE, ACTION_STEAL)
 
+
 def Property(func):
   """ http://adam.gomaa.us/blog/the-python-property-builtin/ """
   return property(**func())
 
 class File(object):
-  """ a file that is located on the cloud and has a yaml file locally """
+  """ a file that is located on the cloud and has a meta file locally """
+  META_EXT = '.cloudfile_meta'
+  META_CONTAINER_NAME = (30, 40)
   def __init__(self, path_to_file):
     self._file_name = os.path.basename(path_to_file) # basename?
     self._path_to_file = path_to_file
-    self._yaml_file = 'path_to_file.cloudfile.yaml'
-    #if yaml exists then get the other data below
-    self._get_yaml()
-    #else create meta
+    self._meta_file = "%s%s" % (path_to_file, META_EXT)
+    if os.path.exists(self._meta_file):
+      f = open(self._meta_file, 'b')
+      f.seek(META_CONTAINER_NAME[0])
+      self.local_container_name = f.read(META_CONTAINER_NAME[1])
+      f.close()
+    elif os.path.exists(self._path_to_file):
+      self.modified = 'today'
+      self.hash = 'imahash'
+    else: # this is very unlikely...
+      print "error: '%s' doesn't exist and does not have a matching meta file", % self._path_to_file
+      #TODO: raise a proper error
+  
+  def __del__(self):
+    print "deleting"
+    f = open(self._meta_file, 'b')
+    #TODO: write out meta file here
+    f.seek(META_CONTAINER_NAME[0])
+    f.write(self.container_name)
+    f.close()
+    object.__del__(self)
 
-  def _get_yaml(self):
-    """ get local yaml data of this file """
-    self.container = 'a_container'
-    self.owner = 'someone'
-    self._modified_date = 'today' # compare local file hash with yaml hash and set new modified if different
-    self._hash = 'imahash'
+  @Property
+  def local_container_name():
+    doc = "container name in the local meta file"
+    def fget(self):
+      return self._container_name
+    def fset(self, container_name):
+      #TODO: raise error if container_name is too big
+      self._container_name = container_name
+    return locals()
 
-  def _set_yaml(self, container_name, owner):
+  def create_yaml(self, container_name, owner):
+    """ create a new yaml file """
     self.container = container_name
     self.owner = owner
-    self._modified_date = 'today'
+    self._modified_date = 'today' # compare local file hash with yaml hash and set new modified if different
     self._hash = 'imahash'
     #TODO: write yaml file
-  create_yaml = _set_yaml
+
   def set_meta_from_yaml(self):
     """ send meta data to the cloud file object """
-    #_set_meta(yaml_data)
+    #self.meta = self.yaml
     pass
+  @Property
+  def meta():
+    doc = " meta data from the cloud "
+    def fget(self):
+      m = {} # connect to the cloud and retrieve meta data
+      return m
+    def fset(self, m):
+      # connect to the cloud and set meta data to m
+      pass
+    return locals()
+
   def _set_meta(self, container_name, owner):
     """ set meta ... """
 
@@ -90,8 +124,9 @@ class Controller(object):
     #TODO: create container_name if it isn't in cloud
     for file_path in file_list:
       f = File(file_path)
-      f.create_yaml(container_name, self.owner_name)
-      f.set_meta_from_yaml()
+      f.create_yaml(container_name, self.owner_name) # creates the yaml file
+      f.set_meta_from_yaml() # add meta to the cloud file
+      f.upload_to_cloud()
     pass
   def get_new(self):
     """ search for cloudfile.yaml files and compare the hashes and download new if different or not existant. """
