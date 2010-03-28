@@ -7,6 +7,8 @@ import struct # for meta file packing/unpacking
 import time
 import datetime
 import hashlib
+import ConfigParser
+import cloudfiles
 ACTION_ADD = 'add'
 ACTION_GET_NEW = 'get-new'
 ACTION_UPDATE = 'update'
@@ -125,7 +127,7 @@ class File(object):
     self.local_hash = hashlib.md5(lf.read()).hexdigest() # use binascii.hexlify(self.local_hash) to compare with remote
     lf.close()
 
-  def set_meta_from_yaml(self):
+  def set_remote_meta(self):
     """ send meta data to the cloud file object """
     print "set remote meta"
     pass
@@ -148,10 +150,10 @@ class File(object):
     pass
 
 class Controller(object):
-  """ a Controller that works in a single directory """
-  def __init__(self, owner_name, login_name, api_key):
+  """ a Controller that handles the actions """
+  def __init__(self, owner_name, connection):
     self.owner_name = owner_name
-    #TODO: get a connection to the cloud using the api_key and login_name
+    self.connection = connection
   
   @Property
   def files():
@@ -168,7 +170,7 @@ class Controller(object):
     for file_path in file_list:
       f = File(file_path)
       f.create_meta_file(container_name, self.owner_name)
-      f.set_meta_from_yaml() # add meta to the cloud file
+      f.set_remote_meta() # add meta to the cloud file
       f.upload_to_cloud()
     print "done"
   def get_new(self):
@@ -199,15 +201,15 @@ if __name__ == "__main__":
   parser.add_option("--config",
       action="store",
       type="string",
-      help="specify a different config file other then the default ~.cloudfile.config one.")
+      default="local.cfg",
+      help="specify a local connection config file. already reads from: ~/.cloudfile.cfg, ~/cloudfile.cfg")
   parser.add_option("--recursive", "-R",
       action="store_true",
-      help="For any directories listed in args find all the *.cloudfile.yaml")
+      help="For any directories listed in args find all the *.cfm files")
   parser.add_option("--container", "-c",
       action="store",
       type="string",
       help="Set the name of the container to work in")
-
 
   (options, args) = parser.parse_args()
 
@@ -233,13 +235,15 @@ if __name__ == "__main__":
         files.append(item)
     return files
 
-
   max_level = 0
   if not options.recursive:
     max_level = 1
   files = get_files(args, max_level)
-  owner_name, login_name, api_key = 'nothing', 'nothing', 'nothing'
-  c = Controller(owner_name, login_name, api_key)
+  config = ConfigParser.SafeConfigParser()
+  config.read("~/.cloudfile.cfg", "~/cloudfile.cfg", options.config)
+  conn = cloudfiles.get_connection(config.get('server', 'login_name'), config.get('server', 'api_key'), servicenet=config.getboolean('server', 'servicenet'))
+  #TODO: handle errors for the config.
+  c = Controller(config.get('local', 'owner_name'), conn)
   c.files = files
   if options.action == ACTION_ADD:
     c.add_files(options.container, c.files)
