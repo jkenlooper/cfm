@@ -6,6 +6,7 @@ import os
 import struct # for meta file packing/unpacking
 import time
 import datetime
+import hashlib
 ACTION_ADD = 'add'
 ACTION_GET_NEW = 'get-new'
 ACTION_UPDATE = 'update'
@@ -15,6 +16,16 @@ ACTION_STEAL = 'steal'
 
 ACTIONS = (ACTION_ADD, ACTION_GET_NEW, ACTION_UPDATE, ACTION_CLEAN, ACTION_DELETE, ACTION_STEAL)
 
+META_EXT = '.cfm' # cloud file meta | cruddy file management
+HASH_LEN = 32 # len(hashlib.md5("yup").hexdigest())
+PACK_TIME_FORMAT = "%Y%j%H%M" #year dayofyear hour minute
+MODIFIED_LEN = 11 # len(time.strftime(PACK_TIME_FORMAT, time.gmtime()))
+CONTAINER_NAME_LEN = 30
+OWNER_NAME_LEN = 10
+URI_LEN = 100
+META_FMT = "%is %is %is %is" % (HASH_LEN, MODIFIED_LEN, OWNER_NAME_LEN, CONTAINER_NAME_LEN)
+META_FMT_PUBLIC = "%s %is" % (META_FMT, URI_LEN) # (network byte order), hash (padding), date, owner, container, uri
+
 
 def Property(func):
   """ http://adam.gomaa.us/blog/the-python-property-builtin/ """
@@ -22,72 +33,61 @@ def Property(func):
 
 class File(object):
   """ a file that is located on the cloud and has a meta file locally """
-  META_EXT = '.cfm' # cloud file meta | cruddy file management
-  HASH_LEN = 16
-  PACK_TIME_FORMAT = "%Y%j%H%M" #year dayofyear hour minute
-  CONTAINER_NAME_LEN = 50
-  OWNER_NAME_LEN = 50
-  URI_LEN = 100
-  META_FMT = "!%ix L %is %is" % (HASH_LEN, OWNER_NAME_LEN, CONTAINER_NAME_LEN)
-  META_FMT_PUBLIC = "%s %is" % (META_FMT, URI_LEN) # (network byte order), hash (padding), date, owner, container, uri
 
   def __init__(self, path_to_file):
     self._file_name = os.path.basename(path_to_file) # basename?
     self._path_to_file = path_to_file
     self._meta_file = "%s%s" % (path_to_file, META_EXT)
+    self._uri = ""
     if os.path.exists(self._meta_file):
       self._unpack()
     elif os.path.exists(self._path_to_file):
-      self._local_modified = int(time.strftime(PACK_TIME_FORMAT, time.gmtime(os.stat(self._path_to_file).st_mtime)))
+      self._local_modified = time.strftime(PACK_TIME_FORMAT, time.gmtime(os.stat(self._path_to_file).st_mtime))
       lf = open(self._path_to_file, 'r')
-      self.local_hash = hashlib.md5(lf.read()).digest() # use binascii.hexlify(self.local_hash) to compare with remote
+      self.local_hash = hashlib.md5(lf.read()).hexdigest()
       lf.close()
     else: # this is very unlikely...
-      print "error: '%s' doesn't exist and does not have a matching meta file", % self._path_to_file
+      print "error: '%s' doesn't exist and does not have a matching meta file" % self._path_to_file
       #TODO: raise a proper error
   
   def __del__(self):
     print "deleting"
     self._pack()
-    super(File, self).__del__(self)
+    #super(File, self).__del__(self)
 
   def _pack(self):
     "write the File attributes to the local meta file"
     f = open(self._meta_file, 'w')
-    if self.uri:
-      p = struct.pack(META_FMT_PUBLIC, self._local_modified, self.local_owner_name, self.local_container_name, self.uri)
+    if self.uri != "":
+      p = struct.pack(META_FMT_PUBLIC, self.local_hash, self._local_modified, self.local_owner_name, self.local_container_name, self.uri)
     else:
-      p = struct.pack(META_FMT, self._local_modified, self.local_owner_name, self.local_container_name)
+      p = struct.pack(META_FMT, self.local_hash, self._local_modified, self.local_owner_name, self.local_container_name)
     f.write(p)
-    f.seek(0)
-    f.write(self.local_hash)
     f.close()
   def _unpack(self):
     "read the File attributes from the local meta file"
     f = open(self._meta_file, 'r')
     p = f.read()
+    f.close()
     if len(p) == struct.calcsize(META_FMT):
-      self._local_modified, self._local_owner_name, self._local_container_name = struct.unpack(META_FMT, p)
+      self.local_hash, self._local_modified, self._local_owner_name, self._local_container_name = struct.unpack(META_FMT, p)
     elif len(p) == struct.calcsize(META_FMT_PUBLIC):
-      self._local_modified, self._local_owner_name, self._local_container_name, self._uri = struct.unpack(META_FMT_PUBLIC, p)
+      self.local_hash, self._local_modified, self._local_owner_name, self._local_container_name, self._uri = struct.unpack(META_FMT_PUBLIC, p)
     else:
       #TODO: raise proper error
       print "corrupt meta file"
 
     if os.path.exists(self._path_to_file):
       lf = open(self._path_to_file, 'r')
-      self.local_hash = hashlib.md5(lf.read()).digest() # use binascii.hexlify(self.local_hash) to compare with remote
+      self.local_hash = hashlib.md5(lf.read()).hexdigest() # use binascii.hexlify(self.local_hash) to compare with remote
       lf.close()
-    else:
-      f.seek(0)
-      self.local_hash = f.read(HASH_LEN)
-    f.close()
 
   @Property
   def local_modified():
     doc = "local modified time as formatted date time"
     def fget(self):
-      return time.asctime(time.strptime(str(self._local_modified), PACK_TIME_FORMAT))
+      return time.asctime(time.strptime(self._local_modified, PACK_TIME_FORMAT))
+    return locals()
   @Property
   def local_container_name():
     doc = "container name in the local meta file"
@@ -105,6 +105,7 @@ class File(object):
       return self._local_owner_name
     def fset(self, owner_name):
       self._local_owner_name = owner_name
+    return locals()
 
   @Property
   def uri():
@@ -113,18 +114,20 @@ class File(object):
       return self._uri
     def fset(self, uri):
       self._uri = uri
+    return locals()
 
   def create_meta_file(self, container_name, owner):
     """ create a new meta file """
     self.local_container_name = container_name
     self.local_owner_name = owner
-    self._modified_date = 'today' # compare local file hash with yaml hash and set new modified if different
-    self._hash = 'imahash'
-    #TODO: write yaml file
+    self._local_modified = time.strftime(PACK_TIME_FORMAT, time.gmtime(os.stat(self._path_to_file).st_mtime))
+    lf = open(self._path_to_file, 'r')
+    self.local_hash = hashlib.md5(lf.read()).hexdigest() # use binascii.hexlify(self.local_hash) to compare with remote
+    lf.close()
 
   def set_meta_from_yaml(self):
     """ send meta data to the cloud file object """
-    #self.meta = self.yaml
+    print "set remote meta"
     pass
   @Property
   def meta():
@@ -139,24 +142,6 @@ class File(object):
 
   def _set_meta(self, container_name, owner):
     """ set meta ... """
-
-  @Property
-  def container_name():
-    doc = "name of the container in the cloud that this file is in."
-    def fget(self):
-      return self._container
-    def fset(self, container_name):
-      self._container_name = container_name
-    return locals()
-  
-  @Property
-  def owner():
-    doc = "owner of the file"
-    def fget(self):
-      return self._owner
-    def fset(self, owner_name):
-      self._owner = owner_name
-    return locals()
 
   def upload_to_cloud(self):
     """ add the file to the cloud """
@@ -182,10 +167,10 @@ class Controller(object):
     #TODO: create container_name if it isn't in cloud
     for file_path in file_list:
       f = File(file_path)
-      f.create_meta_file(container_name, self.owner_name) # creates the yaml file
+      f.create_meta_file(container_name, self.owner_name)
       f.set_meta_from_yaml() # add meta to the cloud file
       f.upload_to_cloud()
-    pass
+    print "done"
   def get_new(self):
     """ search for cloudfile.yaml files and compare the hashes and download new if different or not existant. """
     pass
@@ -256,6 +241,12 @@ if __name__ == "__main__":
   owner_name, login_name, api_key = 'nothing', 'nothing', 'nothing'
   c = Controller(owner_name, login_name, api_key)
   c.files = files
+  if options.action == ACTION_ADD:
+    c.add_files(options.container, c.files)
+  elif options.action == ACTION_GET_NEW:
+    pass
+  else:
+    pass
   #TODO: do operation using the controller
   print ", ".join(files)
 
