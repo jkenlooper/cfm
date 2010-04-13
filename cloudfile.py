@@ -28,6 +28,13 @@ URI_LEN = 100
 META_FMT = "%is %is %is %is" % (HASH_LEN, MODIFIED_LEN, OWNER_NAME_LEN, CONTAINER_NAME_LEN)
 META_FMT_PUBLIC = "%s %is" % (META_FMT, URI_LEN) # (network byte order), hash (padding), date, owner, container, uri
 
+#cloudfile metadata keys
+OWNER = "owner"
+MODIFIED = "modified"
+HASH = "hash"
+COMMENT = "comment"
+
+
 
 def Property(func):
   """ http://adam.gomaa.us/blog/the-python-property-builtin/ """
@@ -36,8 +43,9 @@ def Property(func):
 class File(object):
   """ a file that is located on the cloud and has a meta file locally """
 
-  def __init__(self, path_to_file):
+  def __init__(self, path_to_file, cloudfile):
     self._file_name = os.path.basename(path_to_file) # basename?
+    self._cloudfile = cloudfile
     self._path_to_file = path_to_file
     self._meta_file = "%s%s" % (path_to_file, META_EXT)
     self._uri = ""
@@ -110,8 +118,24 @@ class File(object):
     return locals()
 
   @Property
+  def remote_modified():
+    doc = "remote modified date"
+    def fget(self):
+      return self._cloudfile.metadata["modified"]
+    return locals()
+
+  @Property
+  def remote_owner():
+    doc = "remote owner name"
+    def fget(self):
+      return self._cloudfile.metadata["owner"]
+    def fset(self, owner_name):
+      self._cloudfile.metadata["owner"] = owner_name
+    return locals()
+
+  @Property
   def uri():
-    doc = "location of file if public"
+    doc = "location of file if container is public"
     def fget(self):
       return self._uri
     def fset(self, uri):
@@ -129,25 +153,15 @@ class File(object):
 
   def set_remote_meta(self):
     """ send meta data to the cloud file object """
+    self._cloudfile.sync_metadata()
     print "set remote meta"
-    pass
-  @Property
-  def meta():
-    doc = " meta data from the cloud "
-    def fget(self):
-      m = {} # connect to the cloud and retrieve meta data
-      return m
-    def fset(self, m):
-      # connect to the cloud and set meta data to m
-      pass
-    return locals()
-
-  def _set_meta(self, container_name, owner):
-    """ set meta ... """
 
   def upload_to_cloud(self):
     """ add the file to the cloud """
-    pass
+    f = open(self._path_to_file)
+    self._cloudfile.write(f)
+    self._cloudfile.metadata["modified"] = f.local_modified
+    #TODO: use a callback to track progress of upload
 
 class Controller(object):
   """ a Controller that handles the actions """
@@ -165,14 +179,16 @@ class Controller(object):
     return locals()
 
   def add_files(self, container_name, file_list):
-    """ add all the files in file_list and create a cloudfile.yaml for each. """
-    #TODO: create container_name if it isn't in cloud
+    """ add all the files in file_list and create a meta file for each. """
+    cloudcontainer = self.connection.create_container(container_name)
     for file_path in file_list:
-      f = File(file_path)
+      filename = os.path.basename(file_path)
+      cloudfile = cloudcontainer.create_object(filename)
+      f = File(file_path, cloudfile)
       f.create_meta_file(container_name, self.owner_name)
-      f.set_remote_meta() # add meta to the cloud file
+      f.remote_owner = self.owner_name
       f.upload_to_cloud()
-    print "done"
+      f.set_remote_meta() # syncs meta data to the cloud
   def get_new(self):
     """ search for cloudfile.yaml files and compare the hashes and download new if different or not existant. """
     pass
@@ -189,6 +205,8 @@ class Controller(object):
     """ any files that are different and have a different owner; replace file in cloud and change owner. """
     pass
 
+  #TODO: add ability to make a container public or private.  (adjust TTL as well?)
+
 
 if __name__ == "__main__":
   parser = OptionParser(usage="%%prog --action [%s] [options] [files and or directories]" % "|".join(ACTIONS), version="%prog 0.1", description="add files to the cloud")
@@ -201,8 +219,8 @@ if __name__ == "__main__":
   parser.add_option("--config",
       action="store",
       type="string",
-      default="local.cfg",
-      help="specify a local connection config file. already reads from: ~/.cloudfile.cfg, ~/cloudfile.cfg")
+      default="cloudfile.cfg",
+      help="specify a cloud connection config file.")
   parser.add_option("--recursive", "-R",
       action="store_true",
       help="For any directories listed in args find all the *.cfm files")
@@ -240,8 +258,9 @@ if __name__ == "__main__":
     max_level = 1
   files = get_files(args, max_level)
   config = ConfigParser.SafeConfigParser()
-  config.read("~/.cloudfile.cfg", "~/cloudfile.cfg", options.config)
+  config.read(options.config)
   conn = cloudfiles.get_connection(config.get('server', 'login_name'), config.get('server', 'api_key'), servicenet=config.getboolean('server', 'servicenet'))
+  #TODO: set up a seperate authorization server proxy thingy so it can handle multiple users more securely and won't need to share the api key.
   #TODO: handle errors for the config.
   c = Controller(config.get('local', 'owner_name'), conn)
   c.files = files
