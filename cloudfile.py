@@ -2,6 +2,7 @@
 """use cloudfile meta files as placeholders for cloud files"""
 
 from optparse import OptionParser
+from shutil import move
 import os
 import struct # for meta file packing/unpacking
 import time
@@ -9,8 +10,9 @@ import datetime
 import hashlib
 import ConfigParser
 import cloudfiles
+from cloudfiles.errors import NoSuchContainer, NoSuchObject
 ACTION_ADD = 'add'
-ACTION_GET_NEW = 'get-new'
+ACTION_GET_NEW = 'get_new'
 ACTION_UPDATE = 'update'
 ACTION_CLEAN = 'clean'
 ACTION_DELETE = 'delete'
@@ -43,9 +45,8 @@ def Property(func):
 class File(object):
   """ a file that is located on the cloud and has a meta file locally """
 
-  def __init__(self, path_to_file, cloudfile):
+  def __init__(self, path_to_file):
     self._file_name = os.path.basename(path_to_file) # basename?
-    self._cloudfile = cloudfile
     self._path_to_file = path_to_file
     self._meta_file = "%s%s" % (path_to_file, META_EXT)
     self._uri = ""
@@ -61,7 +62,6 @@ class File(object):
       #TODO: raise a proper error
   
   def __del__(self):
-    print "deleting"
     self._pack()
     #super(File, self).__del__(self)
 
@@ -80,9 +80,9 @@ class File(object):
     p = f.read()
     f.close()
     if len(p) == struct.calcsize(META_FMT):
-      self.local_hash, self._local_modified, self._local_owner_name, self._local_container_name = struct.unpack(META_FMT, p)
+      self.local_hash, self._local_modified, self._local_owner_name, self._container_name = struct.unpack(META_FMT, p)
     elif len(p) == struct.calcsize(META_FMT_PUBLIC):
-      self.local_hash, self._local_modified, self._local_owner_name, self._local_container_name, self._uri = struct.unpack(META_FMT_PUBLIC, p)
+      self.local_hash, self._local_modified, self._local_owner_name, self._container_name, self._uri = struct.unpack(META_FMT_PUBLIC, p)
     else:
       #TODO: raise proper error
       print "corrupt meta file"
@@ -98,11 +98,12 @@ class File(object):
     def fget(self):
       return time.asctime(time.strptime(self._local_modified, PACK_TIME_FORMAT))
     return locals()
+
   @Property
   def local_container_name():
     doc = "container name in the local meta file"
     def fget(self):
-      return self._container_name
+      return "%s" % self._container_name
     def fset(self, container_name):
       #TODO: raise error if container_name is too big
       self._container_name = container_name[:CONTAINER_NAME_LEN]
@@ -115,6 +116,15 @@ class File(object):
       return self._local_owner_name
     def fset(self, owner_name):
       self._local_owner_name = owner_name
+    return locals()
+
+  @Property
+  def cloudfile():
+    doc = "rackspace cloud object"
+    def fget(self):
+      return self._cloudfile
+    def fset(self, c):
+      self._cloudfile = c
     return locals()
 
   @Property
@@ -131,6 +141,13 @@ class File(object):
       return self._cloudfile.metadata["owner"]
     def fset(self, owner_name):
       self._cloudfile.metadata["owner"] = owner_name
+    return locals()
+  
+  @Property
+  def remote_hash():
+    doc = "remote hash of file"
+    def fget(self):
+      return self._cloudfile.metadata["hash"]
     return locals()
 
   @Property
@@ -160,8 +177,15 @@ class File(object):
     """ add the file to the cloud """
     f = open(self._path_to_file)
     self._cloudfile.write(f)
-    self._cloudfile.metadata["modified"] = f.local_modified
+    m = self.local_modified
+    self._cloudfile.metadata["modified"] = m
+    h = self.local_hash
+    self._cloudfile.metadata["hash"] = h
     #TODO: use a callback to track progress of upload
+
+  def download_from_cloud(self, file_path):
+    print "downloading: %s" % file_path
+    self._cloudfile.save_to_filename(file_path)
 
 class Controller(object):
   """ a Controller that handles the actions """
@@ -175,23 +199,51 @@ class Controller(object):
     def fget(self):
       return self._files
     def fset(self, files):
-      self._files = files
+      def is_not_meta_file(file):
+        n, ext = os.path.splitext(file)
+        return ext != META_EXT
+      self._files = filter(is_not_meta_file, files)
+      self._meta_files = ["%s%s" % (f, META_EXT) for f in self._files]
+      print self._meta_files
+      print self._files
     return locals()
 
-  def add_files(self, container_name, file_list):
+  def add_files(self, container_name):
     """ add all the files in file_list and create a meta file for each. """
     cloudcontainer = self.connection.create_container(container_name)
-    for file_path in file_list:
+    for file_path in self._files:
       filename = os.path.basename(file_path)
       cloudfile = cloudcontainer.create_object(filename)
-      f = File(file_path, cloudfile)
+      f = File(file_path)
+      f.cloudfile = cloudfile
       f.create_meta_file(container_name, self.owner_name)
       f.remote_owner = self.owner_name
       f.upload_to_cloud()
       f.set_remote_meta() # syncs meta data to the cloud
   def get_new(self):
-    """ search for cloudfile.yaml files and compare the hashes and download new if different or not existant. """
-    pass
+    """ compare the hashes and download new if different or not existant. """
+    for meta_file_path in self._meta_files:
+      file_path = meta_file_path[:len(meta_file_path) - len(META_EXT)]
+      filename = os.path.basename(file_path)
+      f = File(file_path)
+      try:
+        print type(f.local_container_name)
+        print len(f.local_container_name)
+        cloudcontainer = self.connection.get_container(f.local_container_name)
+        cloudfile = cloudcontainer.get_object(filename) #if not in cloud then mark it as deleted and remove the meta file
+        f.cloudfile = cloudfile
+        if ((f.local_hash != f.remote_hash) or not os.path.exists(file_path)):
+          f.download_from_cloud(file_path)
+      except NoSuchContainer:
+        print "Container: [%s] doesn't exist on cloud" % f.local_container_name
+      except NoSuchObject:
+        print "file: [%s] no longer exists on the cloud"
+        os.remove(meta_file_path)
+        if os.path.exists(file_path):
+          new_path = os.path.join(os.path.dirname(file_path), "deleted.%s" % filename)
+          move(file_path, new_path)
+
+
   def update(self):
     """ Update any that are different. Any that are different and have a different owner; get a copy of the one on server and add "owner_name." in front of it. Any that no longer exist in the cloud rename the file with "deleted." in front of it. """
     pass
@@ -237,7 +289,7 @@ if __name__ == "__main__":
   if not options.action:
     parser.error("Must specify an action")
   elif options.action == ACTION_ADD and not options.container:
-    parser.error("Must set a container name when adding files")
+    parser.error("Must set a container name")
 
   def get_files(items, max_level=0):
     " walk through dir and retrieve all files "
@@ -265,13 +317,10 @@ if __name__ == "__main__":
   c = Controller(config.get('local', 'owner_name'), conn)
   c.files = files
   if options.action == ACTION_ADD:
-    c.add_files(options.container, c.files)
+    c.add_files(options.container)
   elif options.action == ACTION_GET_NEW:
-    pass
+    c.get_new()
   else:
     pass
   #TODO: do operation using the controller
-  print ", ".join(files)
-
-
 
