@@ -193,11 +193,17 @@ class Controller(object):
     def fget(self):
       return self._files
     def fset(self, files):
-      def is_not_meta_file(file):
-        n, ext = os.path.splitext(file)
-        return ext != META_EXT
-      self._files = filter(is_not_meta_file, files)
-      self._meta_files = ["%s%s" % (f, META_EXT) for f in self._files]
+      self._files = []
+      self._meta_files = []
+      for f in files:
+        n, ext = os.path.splitext(f)
+        if ext == META_EXT and f not in self._meta_files:
+          self._meta_files.append(f)
+        elif ext != META_EXT:
+          self._files.append(f)
+          if "%s%s" % (f, META_EXT) not in self._meta_files:
+            self._meta_files.append("%s%s" % (f, META_EXT))
+          
       print self._meta_files
       print self._files
     return locals()
@@ -267,7 +273,7 @@ if __name__ == "__main__":
       help="specify a cloud connection config file.")
   parser.add_option("--recursive", "-R",
       action="store_true",
-      help="For any directories listed in args find all the *.cfm files")
+      help="For any directories listed in args find all the files")
   parser.add_option("--container", "-c",
       action="store",
       type="string",
