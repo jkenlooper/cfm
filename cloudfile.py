@@ -4,7 +4,6 @@
 from optparse import OptionParser
 from shutil import move
 import os
-import struct # for meta file packing/unpacking
 import time
 import datetime
 import hashlib
@@ -23,20 +22,12 @@ ACTIONS = (ACTION_ADD, ACTION_GET_NEW, ACTION_UPDATE, ACTION_CLEAN, ACTION_DELET
 META_EXT = '.cfm' # cloud file meta | cruddy file management
 HASH_LEN = 32 # len(hashlib.md5("yup").hexdigest())
 PACK_TIME_FORMAT = "%Y%j%H%M" #year dayofyear hour minute
-MODIFIED_LEN = 11 # len(time.strftime(PACK_TIME_FORMAT, time.gmtime()))
-CONTAINER_NAME_LEN = 30
-OWNER_NAME_LEN = 10
-URI_LEN = 100
-META_FMT = "%is %is %is %is" % (HASH_LEN, MODIFIED_LEN, OWNER_NAME_LEN, CONTAINER_NAME_LEN)
-META_FMT_PUBLIC = "%s %is" % (META_FMT, URI_LEN) # (network byte order), hash (padding), date, owner, container, uri
 
 #cloudfile metadata keys
 OWNER = "owner"
 MODIFIED = "modified"
 HASH = "hash"
 COMMENT = "comment"
-
-
 
 def Property(func):
   """ http://adam.gomaa.us/blog/the-python-property-builtin/ """
@@ -68,21 +59,24 @@ class File(object):
   def _pack(self):
     "write the File attributes to the local meta file"
     f = open(self._meta_file, 'w')
-    if self.uri != "":
-      p = struct.pack(META_FMT_PUBLIC, self.local_hash, self._local_modified, self.local_owner_name, self.local_container_name, self.uri)
-    else:
-      p = struct.pack(META_FMT, self.local_hash, self._local_modified, self.local_owner_name, self.local_container_name)
-    f.write(p)
+    f.write(self.local_hash)
+    f.write("\n")
+    f.write(self._local_modified)
+    f.write("\n")
+    f.write(self.local_owner_name)
+    f.write("\n")
+    f.write(self.local_container_name)
+    f.write("\n")
+    f.write(self.uri)
+    f.write("\n")
     f.close()
   def _unpack(self):
     "read the File attributes from the local meta file"
     f = open(self._meta_file, 'r')
-    p = f.read()
+    lines = [l.strip() for l in f.readlines()]
     f.close()
-    if len(p) == struct.calcsize(META_FMT):
-      self.local_hash, self._local_modified, self._local_owner_name, self._container_name = struct.unpack(META_FMT, p)
-    elif len(p) == struct.calcsize(META_FMT_PUBLIC):
-      self.local_hash, self._local_modified, self._local_owner_name, self._container_name, self._uri = struct.unpack(META_FMT_PUBLIC, p)
+    if len(lines) == 5:
+      self.local_hash, self._local_modified, self._local_owner_name, self._container_name, self._uri = lines
     else:
       #TODO: raise proper error
       print "corrupt meta file"
@@ -103,10 +97,10 @@ class File(object):
   def local_container_name():
     doc = "container name in the local meta file"
     def fget(self):
-      return "%s" % self._container_name
+      return self._container_name
     def fset(self, container_name):
       #TODO: raise error if container_name is too big
-      self._container_name = container_name[:CONTAINER_NAME_LEN]
+      self._container_name = container_name
     return locals()
 
   @Property
@@ -227,8 +221,6 @@ class Controller(object):
       filename = os.path.basename(file_path)
       f = File(file_path)
       try:
-        print type(f.local_container_name)
-        print len(f.local_container_name)
         cloudcontainer = self.connection.get_container(f.local_container_name)
         cloudfile = cloudcontainer.get_object(filename) #if not in cloud then mark it as deleted and remove the meta file
         f.cloudfile = cloudfile
