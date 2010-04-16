@@ -125,7 +125,7 @@ class File(object):
   def remote_modified():
     doc = "remote modified date"
     def fget(self):
-      return self._cloudfile.metadata["modified"]
+      return time.asctime(time.strptime(self._cloudfile.metadata["modified"], PACK_TIME_FORMAT))
     return locals()
 
   @Property
@@ -171,7 +171,7 @@ class File(object):
     """ add the file to the cloud """
     f = open(self._path_to_file)
     self._cloudfile.write(f)
-    m = self.local_modified
+    m = self._local_modified
     self._cloudfile.metadata["modified"] = m
     h = self.local_hash
     self._cloudfile.metadata["hash"] = h
@@ -260,6 +260,7 @@ class Controller(object):
           f.download_from_cloud(file_path=remote_owner_path)
         elif (f.local_hash != f.remote_hash) and os.path.exists(file_path):
           f.upload_to_cloud()
+          f.set_remote_meta() # syncs meta data to the cloud
           print "updating cloud file: %s" % file_path
 
       except NoSuchContainer:
@@ -273,7 +274,28 @@ class Controller(object):
 
   def clean(self):
     """ delete files just from local directory and leave the yaml untouched """
-    pass
+    for file_path in self._files:
+      filename = os.path.basename(file_path)
+      if "%s%s" % (file_path, META_EXT) in self._meta_files:
+        f = File(file_path)
+        try:
+          cloudcontainer = self.connection.get_container(f.local_container_name)
+          cloudfile = cloudcontainer.get_object(filename)
+          f.cloudfile = cloudfile
+          if (f.local_owner != f.remote_owner):
+            print "owners don't match; cannot clean file: %s " % file_path
+          elif (f.local_hash != f.remote_hash):
+            print "hash of files don't match; cannot clean file: %s " % file_path
+          else:
+            os.remove(file_path)
+
+        except NoSuchContainer:
+          print "Container: [%s] doesn't exist on cloud" % f.local_container_name
+        except NoSuchObject:
+          print "file: [%s] no longer exists on the cloud"
+          if os.path.exists(file_path):
+            new_path = os.path.join(os.path.dirname(file_path), "deleted.%s" % filename)
+            move(file_path, new_path)
   def delete_files(self, file_list):
     """ Remove files from cloud and local directory """
     pass
@@ -346,6 +368,8 @@ if __name__ == "__main__":
     c.get_new()
   elif options.action == ACTION_UPDATE:
     c.update()
+  elif options.action == ACTION_CLEAN:
+    c.clean()
   else:
     pass
   #TODO: do operation using the controller
