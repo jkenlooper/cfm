@@ -37,6 +37,7 @@ class File(object):
   """ a file that is located on the cloud and has a meta file locally """
 
   def __init__(self, path_to_file):
+    self._deleted_meta_file = False
     self._file_name = os.path.basename(path_to_file) # basename?
     self._path_to_file = path_to_file
     self._meta_file = "%s%s" % (path_to_file, META_EXT)
@@ -58,18 +59,19 @@ class File(object):
 
   def _pack(self):
     "write the File attributes to the local meta file"
-    f = open(self._meta_file, 'w')
-    f.write(self.local_hash)
-    f.write("\n")
-    f.write(self._local_modified)
-    f.write("\n")
-    f.write(self.local_owner)
-    f.write("\n")
-    f.write(self.local_container_name)
-    f.write("\n")
-    f.write(self.uri)
-    f.write("\n")
-    f.close()
+    if not self._deleted_meta_file:
+      f = open(self._meta_file, 'w')
+      f.write(self.local_hash)
+      f.write("\n")
+      f.write(self._local_modified)
+      f.write("\n")
+      f.write(self.local_owner)
+      f.write("\n")
+      f.write(self.local_container_name)
+      f.write("\n")
+      f.write(self.uri)
+      f.write("\n")
+      f.close()
   def _unpack(self):
     "read the File attributes from the local meta file"
     f = open(self._meta_file, 'r')
@@ -166,6 +168,11 @@ class File(object):
     """ send meta data to the cloud file object """
     self._cloudfile.sync_metadata()
     print "set remote meta"
+  
+  def delete_meta(self):
+    """ delete meta file """
+    os.remove(self._meta_file)
+    self._deleted_meta_file = True # prevents writing of meta file on close
 
   def upload_to_cloud(self):
     """ add the file to the cloud """
@@ -206,8 +213,6 @@ class Controller(object):
           if "%s%s" % (f, META_EXT) not in self._meta_files:
             self._meta_files.append("%s%s" % (f, META_EXT))
           
-      print self._meta_files
-      print self._files
     return locals()
 
   def add_files(self, container_name):
@@ -237,8 +242,9 @@ class Controller(object):
       except NoSuchContainer:
         print "Container: [%s] doesn't exist on cloud" % f.local_container_name
       except NoSuchObject:
-        print "file: [%s] no longer exists on the cloud"
-        os.remove(meta_file_path)
+        print "file: [%s] no longer exists on the cloud" % file_path
+        f.delete_meta()
+        print meta_file_path
         if os.path.exists(file_path):
           new_path = os.path.join(os.path.dirname(file_path), "deleted.%s" % filename)
           move(file_path, new_path)
@@ -267,13 +273,13 @@ class Controller(object):
         print "Container: [%s] doesn't exist on cloud" % f.local_container_name
       except NoSuchObject:
         print "file: [%s] no longer exists on the cloud"
-        os.remove(meta_file_path)
+        f.delete_meta()
         if os.path.exists(file_path):
           new_path = os.path.join(os.path.dirname(file_path), "deleted.%s" % filename)
           move(file_path, new_path)
 
   def clean(self):
-    """ delete files just from local directory and leave the yaml untouched """
+    """ delete files just from local directory and leave the meta file untouched """
     for file_path in self._files:
       filename = os.path.basename(file_path)
       if "%s%s" % (file_path, META_EXT) in self._meta_files:
@@ -296,10 +302,25 @@ class Controller(object):
           if os.path.exists(file_path):
             new_path = os.path.join(os.path.dirname(file_path), "deleted.%s" % filename)
             move(file_path, new_path)
-  def delete_files(self, file_list):
-    """ Remove files from cloud and local directory """
-    pass
-  def steal_files(self, file_list):
+  def delete(self):
+    """ Remove files from cloud """
+    for meta_file_path in self._meta_files:
+      file_path = meta_file_path[:len(meta_file_path) - len(META_EXT)]
+      filename = os.path.basename(file_path)
+      f = File(file_path)
+      try:
+        cloudcontainer = self.connection.get_container(f.local_container_name)
+        cloudfile = cloudcontainer.get_object(filename)
+        f.cloudfile = cloudfile
+        if (f.local_owner == f.remote_owner):
+          cloudcontainer.delete_object(filename)
+          os.remove(meta_file_path)
+      except NoSuchContainer:
+        print "Container: [%s] doesn't exist on cloud" % f.local_container_name
+      except NoSuchObject:
+        print "file: [%s] has already been removed from the cloud" % file_path
+        f.delete_meta()
+  def steal(self):
     """ any files that are different and have a different owner; replace file in cloud and change owner. """
     pass
 
@@ -370,6 +391,8 @@ if __name__ == "__main__":
     c.update()
   elif options.action == ACTION_CLEAN:
     c.clean()
+  elif options.action == ACTION_DELETE:
+    c.delete()
   else:
     pass
   #TODO: do operation using the controller
