@@ -63,7 +63,7 @@ class File(object):
     f.write("\n")
     f.write(self._local_modified)
     f.write("\n")
-    f.write(self.local_owner_name)
+    f.write(self.local_owner)
     f.write("\n")
     f.write(self.local_container_name)
     f.write("\n")
@@ -104,7 +104,7 @@ class File(object):
     return locals()
 
   @Property
-  def local_owner_name():
+  def local_owner():
     doc = "local owner name"
     def fget(self):
       return self._local_owner_name
@@ -156,7 +156,7 @@ class File(object):
   def create_meta_file(self, container_name, owner):
     """ create a new meta file """
     self.local_container_name = container_name
-    self.local_owner_name = owner
+    self.local_owner = owner
     self._local_modified = time.strftime(PACK_TIME_FORMAT, time.gmtime(os.stat(self._path_to_file).st_mtime))
     lf = open(self._path_to_file, 'r')
     self.local_hash = hashlib.md5(lf.read()).hexdigest() # use binascii.hexlify(self.local_hash) to compare with remote
@@ -177,7 +177,9 @@ class File(object):
     self._cloudfile.metadata["hash"] = h
     #TODO: use a callback to track progress of upload
 
-  def download_from_cloud(self, file_path):
+  def download_from_cloud(self, file_path=None):
+    if not file_path:
+      file_path = self._path_to_file
     print "downloading: %s" % file_path
     self._cloudfile.save_to_filename(file_path)
 
@@ -231,7 +233,7 @@ class Controller(object):
         cloudfile = cloudcontainer.get_object(filename) #if not in cloud then mark it as deleted and remove the meta file
         f.cloudfile = cloudfile
         if ((f.local_hash != f.remote_hash) or not os.path.exists(file_path)):
-          f.download_from_cloud(file_path)
+          f.download_from_cloud()
       except NoSuchContainer:
         print "Container: [%s] doesn't exist on cloud" % f.local_container_name
       except NoSuchObject:
@@ -244,7 +246,31 @@ class Controller(object):
 
   def update(self):
     """ Update any that are different. Any that are different and have a different owner; get a copy of the one on server and add "owner_name." in front of it. Any that no longer exist in the cloud rename the file with "deleted." in front of it. """
-    pass
+    for meta_file_path in self._meta_files:
+      file_path = meta_file_path[:len(meta_file_path) - len(META_EXT)]
+      filename = os.path.basename(file_path)
+      f = File(file_path)
+      try:
+        cloudcontainer = self.connection.get_container(f.local_container_name)
+        cloudfile = cloudcontainer.get_object(filename) #if not in cloud then mark it as deleted and remove the meta file
+        f.cloudfile = cloudfile
+        if (f.local_owner != f.remote_owner):
+          remote_owner_path = os.path.join(os.path.dirname(file_path), "%s.%s" % (f.remote_owner, filename))
+          print "file: %s has a different owner on cloud then local owner. downloading file as: %s" % (file_path, remote_owner_path)
+          f.download_from_cloud(file_path=remote_owner_path)
+        elif (f.local_hash != f.remote_hash) and os.path.exists(file_path):
+          f.upload_to_cloud()
+          print "updating cloud file: %s" % file_path
+
+      except NoSuchContainer:
+        print "Container: [%s] doesn't exist on cloud" % f.local_container_name
+      except NoSuchObject:
+        print "file: [%s] no longer exists on the cloud"
+        os.remove(meta_file_path)
+        if os.path.exists(file_path):
+          new_path = os.path.join(os.path.dirname(file_path), "deleted.%s" % filename)
+          move(file_path, new_path)
+
   def clean(self):
     """ delete files just from local directory and leave the yaml untouched """
     pass
@@ -318,6 +344,8 @@ if __name__ == "__main__":
     c.add_files(options.container)
   elif options.action == ACTION_GET_NEW:
     c.get_new()
+  elif options.action == ACTION_UPDATE:
+    c.update()
   else:
     pass
   #TODO: do operation using the controller
