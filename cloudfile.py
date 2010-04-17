@@ -148,8 +148,9 @@ class File(object):
   def uri():
     doc = "location of file if container is public"
     def fget(self):
-      #TODO: get the container object; if it's public then get the uri of this file
-      return "some url of the file"
+      if self._cloudfile.container.is_public:
+        return "%s/%s" % (self._cloudfile.container.public_uri(), self._file_name)
+      return False
     return locals()
 
   def create_meta_file(self, container_name, owner):
@@ -237,6 +238,7 @@ class Controller(object):
         if ((f.local_hash != f.remote_hash) or not os.path.exists(file_path)):
           f.download_from_cloud()
         f.local_owner = f.remote_owner
+        print f.uri
         # local_modified too?
       except NoSuchContainer:
         print "Container: [%s] doesn't exist on cloud" % f.container_name
@@ -343,16 +345,22 @@ class Controller(object):
     """ create all the meta files for the container and place them in the directory specified in files """
     pass
   
-  def make_container_public(self, container, ttl=1234):
+  def make_container_public(self, container, ttl=604800):
     """ make the container specified to be accessible from the public """
-    pass
+    try:
+      cloudcontainer = self.connection.get_container(container)
+      cloudcontainer.make_public(ttl=ttl)
+    except NoSuchContainer:
+      print "Container: [%s] doesn't exist on cloud" % container
 
   def make_container_private(self, container):
     """ make a container be private and no longer accessible from the public """
-    pass
+    try:
+      cloudcontainer = self.connection.get_container(container)
+      cloudcontainer.make_private()
+    except NoSuchContainer:
+      print "Container: [%s] doesn't exist on cloud" % container
   
-  #TODO: add ability to make a container public or private.  (adjust TTL as well?)
-
 
 if __name__ == "__main__":
   parser = OptionParser(usage="%%prog --action [%s] [options] [files and or directories]" % "|".join(ACTIONS), version="%prog 0.1", description="add files to the cloud")
@@ -374,18 +382,31 @@ if __name__ == "__main__":
       action="store",
       type="string",
       help="Set the name of the container to work in")
+  parser.add_option("--public",
+      action="store_true",
+      help="make the container public and publish to the CDN")
+  parser.add_option("--ttl",
+      action="store",
+      type="int",
+      help="Time in seconds when the public container should refresh it's cache")
+  parser.add_option("--private",
+      action="store_true",
+      help="make the container private. This is the default.")
 
   (options, args) = parser.parse_args()
 
-  if not args:
+  if not args and not (options.public or options.private):
     parser.error("No files or directories specified.")
 
-  if not options.action:
+  if not options.action and not (options.public or options.private):
     parser.error("Must specify an action")
-  elif options.action == ACTION_ADD and not options.container:
+  elif not (options.public or options.private) and options.action == ACTION_ADD and not options.container:
     parser.error("Must set a container name")
-  elif options.action == ACTION_GET_META_FILES and not options.container:
+  elif (options.public or options.private or options.action == ACTION_GET_META_FILES) and not options.container:
     parser.error("Must specify a container name")
+  elif options.ttl and not options.public:
+    parser.error("Must set option --public as well")
+
 
   def get_files(items, max_level=0):
     " walk through dir and retrieve all files "
@@ -428,5 +449,13 @@ if __name__ == "__main__":
     c.get_meta_files(options.container)
   else:
     print "unknown action: %s" % options.action
+
+  if options.public and not options.private:
+    if options.ttl:
+      c.make_container_public(options.container, ttl=options.ttl)
+    else:
+      c.make_container_public(options.container)
+  elif options.private:
+    c.make_container_private(options.container)
   #TODO: do operation using the controller
 
