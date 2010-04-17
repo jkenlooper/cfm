@@ -315,7 +315,10 @@ class Controller(object):
         f.cloudfile = cloudfile
         if (f.local_owner == f.remote_owner):
           cloudcontainer.delete_object(filename)
-          os.remove(meta_file_path)
+          f.delete_meta()
+        if not cloudcontainer.list_objects():
+          print "Deleting empty container: %s" % f.container_name
+          self.connection.delete_container(f.container_name)
       except NoSuchContainer:
         print "Container: [%s] doesn't exist on cloud" % f.container_name
       except NoSuchObject:
