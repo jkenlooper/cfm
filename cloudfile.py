@@ -16,6 +16,7 @@ ACTION_UPDATE = 'update'
 ACTION_CLEAN = 'clean'
 ACTION_DELETE = 'delete'
 ACTION_STEAL = 'steal'
+ACTION_GET_META_FILES = 'get_meta'
 
 ACTIONS = (ACTION_ADD, ACTION_GET_NEW, ACTION_UPDATE, ACTION_CLEAN, ACTION_DELETE, ACTION_STEAL)
 
@@ -41,7 +42,6 @@ class File(object):
     self._file_name = os.path.basename(path_to_file) # basename?
     self._path_to_file = path_to_file
     self._meta_file = "%s%s" % (path_to_file, META_EXT)
-    self._uri = ""
     if os.path.exists(self._meta_file):
       self._unpack()
     elif os.path.exists(self._path_to_file):
@@ -69,16 +69,14 @@ class File(object):
       f.write("\n")
       f.write(self.container_name)
       f.write("\n")
-      f.write(self.uri)
-      f.write("\n")
       f.close()
   def _unpack(self):
     "read the File attributes from the local meta file"
     f = open(self._meta_file, 'r')
     lines = [l.strip() for l in f.readlines()]
     f.close()
-    if len(lines) == 5:
-      self.local_hash, self._local_modified, self._local_owner_name, self._container_name, self._uri = lines
+    if len(lines) == 4:
+      self.local_hash, self._local_modified, self._local_owner_name, self._container_name = lines
     else:
       #TODO: raise proper error
       print "corrupt meta file"
@@ -150,9 +148,8 @@ class File(object):
   def uri():
     doc = "location of file if container is public"
     def fget(self):
-      return self._uri
-    def fset(self, uri):
-      self._uri = uri
+      #TODO: get the container object; if it's public then get the uri of this file
+      return "some url of the file"
     return locals()
 
   def create_meta_file(self, container_name, owner):
@@ -342,6 +339,18 @@ class Controller(object):
       except NoSuchObject:
         print "file: [%s] no longer exists on the cloud" % file_path
 
+  def get_meta_files(self, container):
+    """ create all the meta files for the container and place them in the directory specified in files """
+    pass
+  
+  def make_container_public(self, container, ttl=1234):
+    """ make the container specified to be accessible from the public """
+    pass
+
+  def make_container_private(self, container):
+    """ make a container be private and no longer accessible from the public """
+    pass
+  
   #TODO: add ability to make a container public or private.  (adjust TTL as well?)
 
 
@@ -375,6 +384,8 @@ if __name__ == "__main__":
     parser.error("Must specify an action")
   elif options.action == ACTION_ADD and not options.container:
     parser.error("Must set a container name")
+  elif options.action == ACTION_GET_META_FILES and not options.container:
+    parser.error("Must specify a container name")
 
   def get_files(items, max_level=0):
     " walk through dir and retrieve all files "
@@ -413,6 +424,8 @@ if __name__ == "__main__":
     c.delete()
   elif options.action == ACTION_STEAL:
     c.steal()
+  elif options.action == ACTION_GET_META_FILES:
+    c.get_meta_files(options.container)
   else:
     print "unknown action: %s" % options.action
   #TODO: do operation using the controller
