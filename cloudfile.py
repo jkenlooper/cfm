@@ -18,7 +18,7 @@ ACTION_DELETE = 'delete'
 ACTION_STEAL = 'steal'
 ACTION_GET_META_FILES = 'get_meta'
 
-ACTIONS = (ACTION_ADD, ACTION_GET_NEW, ACTION_UPDATE, ACTION_CLEAN, ACTION_DELETE, ACTION_STEAL)
+ACTIONS = (ACTION_ADD, ACTION_GET_NEW, ACTION_UPDATE, ACTION_CLEAN, ACTION_DELETE, ACTION_STEAL, ACTION_GET_META_FILES)
 
 META_EXT = '.cfm' # cloud file meta | cruddy file management
 HASH_LEN = 32 # len(hashlib.md5("yup").hexdigest())
@@ -49,9 +49,9 @@ class File(object):
       lf = open(self._path_to_file, 'r')
       self.local_hash = hashlib.md5(lf.read()).hexdigest()
       lf.close()
-    else: # this is very unlikely...
-      print "error: '%s' doesn't exist and does not have a matching meta file" % self._path_to_file
-      #TODO: raise a proper error
+    else: # creating a new meta file.
+      self._local_modified = 'unknown'
+      self.local_hash = 'unknown'
   
   def __del__(self):
     self._pack()
@@ -91,6 +91,9 @@ class File(object):
     doc = "local modified time as formatted date time"
     def fget(self):
       return time.asctime(time.strptime(self._local_modified, PACK_TIME_FORMAT))
+    def fset(self, t):
+      #TODO: check for proper format
+      self._local_modified = t
     return locals()
 
   @Property
@@ -148,7 +151,7 @@ class File(object):
   def uri():
     doc = "location of file if container is public"
     def fget(self):
-      if self._cloudfile.container.is_public:
+      if self._cloudfile.container.is_public():
         return "%s/%s" % (self._cloudfile.container.public_uri(), self._file_name)
       return False
     return locals()
@@ -165,7 +168,6 @@ class File(object):
   def set_remote_meta(self):
     """ send meta data to the cloud file object """
     self._cloudfile.sync_metadata()
-    print "set remote meta"
   
   def delete_meta(self):
     """ delete meta file """
@@ -238,8 +240,9 @@ class Controller(object):
         if ((f.local_hash != f.remote_hash) or not os.path.exists(file_path)):
           f.download_from_cloud()
         f.local_owner = f.remote_owner
-        print f.uri
         # local_modified too?
+        if f.uri:
+          print f.uri
       except NoSuchContainer:
         print "Container: [%s] doesn't exist on cloud" % f.container_name
       except NoSuchObject:
@@ -344,9 +347,24 @@ class Controller(object):
       except NoSuchObject:
         print "file: [%s] no longer exists on the cloud" % file_path
 
-  def get_meta_files(self, container):
+  def get_meta_files(self, container, dir):
     """ create all the meta files for the container and place them in the directory specified in files """
-    pass
+    try:
+      cloudcontainer = self.connection.get_container(container)
+      if os.path.isdir(dir):
+        for filename in cloudcontainer.list_objects():
+          f = File(os.path.join(dir, filename))
+          cloudfile = cloudcontainer.get_object(filename)
+          f.cloudfile = cloudfile
+          f.local_owner = f.remote_owner
+          f.local_hash = f.remote_hash
+          f.local_modified = f.cloudfile.metadata["modified"]
+          f.container_name = container
+          f.set_remote_meta()
+    except NoSuchContainer:
+      print "Container: [%s] doesn't exist on cloud" % container
+    except NoSuchObject:
+      print "file: [%s] no longer exists on the cloud" % filename
   
   def make_container_public(self, container, ttl=604800):
     """ make the container specified to be accessible from the public """
@@ -449,7 +467,7 @@ if __name__ == "__main__":
   elif options.action == ACTION_STEAL:
     c.steal()
   elif options.action == ACTION_GET_META_FILES:
-    c.get_meta_files(options.container)
+    c.get_meta_files(options.container, args[0])
   else:
     print "unknown action: %s" % options.action
 
