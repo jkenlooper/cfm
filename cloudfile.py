@@ -265,7 +265,7 @@ class Controller(object):
         cloudcontainer = self.connection.get_container(f.container_name)
         cloudfile = cloudcontainer.get_object(filename) #if not in cloud then mark it as deleted and remove the meta file
         f.cloudfile = cloudfile
-        if (f.local_owner != f.remote_owner):
+        if (f.local_owner != f.remote_owner) or (self.owner_name != f.remote_owner):
           remote_owner_path = os.path.join(os.path.dirname(file_path), "%s.%s" % (f.remote_owner, filename))
           print "file: %s has a different owner on cloud then local owner. downloading file as: %s" % (file_path, remote_owner_path)
           f.download_from_cloud(file_path=remote_owner_path)
