@@ -4,6 +4,7 @@
 from optparse import OptionParser
 from shutil import move
 import os
+from getpass import getuser
 import time
 import datetime
 import hashlib
@@ -394,7 +395,7 @@ if __name__ == "__main__":
   parser.add_option("--config",
       action="store",
       type="string",
-      default="cloudfile.cfg",
+      default="/home/%s/cloudfile.cfg" % getuser(), # better way of doing this?
       help="specify a cloud connection config file.")
   parser.add_option("--recursive", "-R",
       action="store_true",
