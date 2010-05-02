@@ -228,6 +228,7 @@ class Controller(object):
       f.remote_owner = self.owner_name
       f.upload_to_cloud()
       f.set_remote_meta() # syncs meta data to the cloud
+      print "uploaded: %s" % file_path
   def get_new(self):
     """ compare the hashes and download new if different or not existant. """
     for meta_file_path in self._meta_files:
