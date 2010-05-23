@@ -299,7 +299,7 @@ class Controller(object):
           elif (f.local_hash != f.remote_hash):
             print "hash of files don't match; cannot clean file: %s " % file_path
           else:
-            os.remove(file_path)
+            os.system("rm %s" % file_path)
 
         except NoSuchContainer:
           print "Container: [%s] doesn't exist on cloud" % f.container_name
