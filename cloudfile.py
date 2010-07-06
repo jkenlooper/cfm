@@ -18,8 +18,9 @@ ACTION_CLEAN = 'clean'
 ACTION_DELETE = 'delete'
 ACTION_STEAL = 'steal'
 ACTION_GET_META_FILES = 'get_meta'
+ACTION_GET_FILE = 'get_file'
 
-ACTIONS = (ACTION_ADD, ACTION_GET_NEW, ACTION_UPDATE, ACTION_CLEAN, ACTION_DELETE, ACTION_STEAL, ACTION_GET_META_FILES)
+ACTIONS = (ACTION_ADD, ACTION_GET_NEW, ACTION_UPDATE, ACTION_CLEAN, ACTION_DELETE, ACTION_STEAL, ACTION_GET_META_FILES, ACTION_GET_FILE)
 
 META_EXT = '.cfm' # cloud file meta | cruddy file management
 HASH_LEN = 32 # len(hashlib.md5("yup").hexdigest())
@@ -284,6 +285,27 @@ class Controller(object):
           new_path = os.path.join(os.path.dirname(file_path), "deleted.%s" % filename)
           move(file_path, new_path)
 
+  def get_file(self, container_name):
+    """ get/download file/s based on the name and container and generate a meta file for each. """
+    #TODO: add directory to download files too?
+    for file_path in self._files:
+      filename = os.path.basename(file_path)
+      f = File(file_path)
+      f.container_name = container_name
+      try:
+        cloudcontainer = self.connection.get_container(f.container_name)
+        cloudfile = cloudcontainer.get_object(filename)
+        f.cloudfile = cloudfile
+        f.download_from_cloud()
+
+        f.create_meta_file(container_name, self.owner_name)
+
+      except NoSuchContainer:
+        print "Container: [%s] doesn't exist on cloud" % f.container_name
+      except NoSuchObject:
+        print "file: [%s] no longer exists on the cloud"
+
+
   def clean(self):
     """ delete files just from local directory and leave the meta file untouched """
     for file_path in self._files:
@@ -425,7 +447,7 @@ if __name__ == "__main__":
     parser.error("Must specify an action")
   elif not (options.public or options.private) and options.action == ACTION_ADD and not options.container:
     parser.error("Must set a container name")
-  elif (options.public or options.private or options.action == ACTION_GET_META_FILES) and not options.container:
+  elif (options.public or options.private or options.action in (ACTION_GET_META_FILES, ACTION_GET_FILE)) and not options.container:
     parser.error("Must specify a container name")
   elif options.ttl and not options.public:
     parser.error("Must set option --public as well")
@@ -470,6 +492,8 @@ if __name__ == "__main__":
     c.steal()
   elif options.action == ACTION_GET_META_FILES:
     c.get_meta_files(options.container, args[0])
+  elif options.action == ACTION_GET_FILE:
+    c.get_file(options.container)
   else:
     print "unknown action: %s" % options.action
 
