@@ -405,6 +405,15 @@ class Controller(object):
       cloudcontainer.make_private()
     except NoSuchContainer:
       print "Container: [%s] doesn't exist on cloud" % container
+
+  def set_referrer_restriction(self, container, url):
+    """ set acl referrer restriction """
+    try:
+      cloudcontainer = self.connection.get_container(container)
+      cloudcontainer.acl_referrer(url)
+    except NoSuchContainer:
+      print "Container: [%s] doesn't exist on cloud" % container
+
   
 
 if __name__ == "__main__":
@@ -434,20 +443,24 @@ if __name__ == "__main__":
       action="store",
       type="int",
       help="Time in seconds when the public container should refresh it's cache")
+  parser.add_option("--referrer",
+      action="store",
+      type="string",
+      help="restrict by referrer for the container ( specify a url like http://example.com )")
   parser.add_option("--private",
       action="store_true",
       help="make the container private. This is the default.")
 
   (options, args) = parser.parse_args()
 
-  if not args and not (options.public or options.private):
+  if not args and not (options.public or options.private or options.referrer):
     parser.error("No files or directories specified.")
 
-  if not options.action and not (options.public or options.private):
+  if not options.action and not (options.public or options.private or options.referrer):
     parser.error("Must specify an action")
-  elif not (options.public or options.private) and options.action == ACTION_ADD and not options.container:
+  elif not (options.public or options.private or options.referrer) and options.action == ACTION_ADD and not options.container:
     parser.error("Must set a container name")
-  elif (options.public or options.private or options.action in (ACTION_GET_META_FILES, ACTION_GET_FILE)) and not options.container:
+  elif (options.public or options.private or options.referrer or options.action in (ACTION_GET_META_FILES, ACTION_GET_FILE)) and not options.container:
     parser.error("Must specify a container name")
   elif options.ttl and not options.public:
     parser.error("Must set option --public as well")
@@ -504,5 +517,10 @@ if __name__ == "__main__":
       c.make_container_public(options.container)
   elif options.private:
     c.make_container_private(options.container)
+
+  if options.referrer:
+    #TODO verify proper referrer string (can be blank to unset it?)
+    c.set_referrer_restriction(options.container, options.referrer)
+
   #TODO: do operation using the controller
 
