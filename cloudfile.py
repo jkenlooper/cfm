@@ -12,15 +12,15 @@ import ConfigParser
 import cloudfiles
 from cloudfiles.errors import NoSuchContainer, NoSuchObject
 ACTION_ADD = 'add'
-ACTION_GET_NEW = 'get_new'
-ACTION_UPDATE = 'update'
+ACTION_DOWNLOAD_NEW = 'download_new'
+ACTION_UPLOAD_NEW = 'upload_new'
 ACTION_CLEAN = 'clean'
 ACTION_DELETE = 'delete'
 ACTION_STEAL = 'steal'
 ACTION_GET_META_FILES = 'get_meta'
 ACTION_GET_FILE = 'get_file'
 
-ACTIONS = (ACTION_ADD, ACTION_GET_NEW, ACTION_UPDATE, ACTION_CLEAN, ACTION_DELETE, ACTION_STEAL, ACTION_GET_META_FILES, ACTION_GET_FILE)
+ACTIONS = (ACTION_ADD, ACTION_DOWNLOAD_NEW, ACTION_UPLOAD_NEW, ACTION_CLEAN, ACTION_DELETE, ACTION_STEAL, ACTION_GET_META_FILES, ACTION_GET_FILE)
 
 META_EXT = '.cfm' # cloud file meta | cruddy file management
 HASH_LEN = 32 # len(hashlib.md5("yup").hexdigest())
@@ -96,6 +96,20 @@ class File(object):
     def fset(self, t):
       #TODO: check for proper format
       self._local_modified = t
+    return locals()
+
+  @Property
+  def file_name():
+    doc = "file name (not settable)"
+    def fget(self):
+      return self._file_name
+    return locals()
+
+  @Property
+  def file_path():
+    doc = "file path (not settable)"
+    def fget(self):
+      return self._path_to_file
     return locals()
 
   @Property
@@ -230,34 +244,73 @@ class Controller(object):
       f.upload_to_cloud()
       f.set_remote_meta() # syncs meta data to the cloud
       print "uploaded: %s" % file_path
-  def get_new(self):
+  def download_new(self):
     """ compare the hashes and download new if different or not existant. """
-    for meta_file_path in self._meta_files:
+    meta_files_grouped_by_container = {}
+    for meta_file_path in [x for x in self._meta_files if os.path.isfile(x)]:
       file_path = meta_file_path[:len(meta_file_path) - len(META_EXT)]
-      filename = os.path.basename(file_path)
       f = File(file_path)
       try:
-        cloudcontainer = self.connection.get_container(f.container_name)
-        cloudfile = cloudcontainer.get_object(filename) #if not in cloud then mark it as deleted and remove the meta file
-        f.cloudfile = cloudfile
-        if ((f.local_hash != f.remote_hash) or not os.path.exists(file_path)):
-          f.download_from_cloud()
-        f.local_owner = f.remote_owner
-        # local_modified too?
-        if f.uri:
-          print f.uri
+        meta_files_grouped_by_container[f.container_name].append(f)
+      except KeyError:
+        meta_files_grouped_by_container[f.container_name] = []
+        meta_files_grouped_by_container[f.container_name].append(f)
+
+    total_files_to_download = count = len(self._meta_files)
+    print "Total files to download: %i" % total_files_to_download
+    for container_name in meta_files_grouped_by_container.keys():
+      c = meta_files_grouped_by_container[container_name]
+      try:
+        cloudcontainer = self.connection.get_container(container_name)
+        for f in c:
+          try:
+            cloudfile = cloudcontainer.get_object(f.file_name) #if not in cloud then mark it as deleted and remove the meta file
+            f.cloudfile = cloudfile
+            if ((f.local_hash != f.remote_hash) or not os.path.exists(f.file_path)):
+              f.download_from_cloud()
+              print "%i/%i" % (count, total_files_to_download)
+            count -= 1
+            f.local_owner = f.remote_owner
+            # local_modified too?
+            if f.uri:
+              print f.uri
+          except NoSuchObject:
+            print "file: [%s] no longer exists on the cloud" % file_path
+            f.delete_meta()
+            print meta_file_path
+            if os.path.exists(file_path):
+              new_path = os.path.join(os.path.dirname(file_path), "deleted.%s" % filename)
+              move(file_path, new_path)
       except NoSuchContainer:
         print "Container: [%s] doesn't exist on cloud" % f.container_name
-      except NoSuchObject:
-        print "file: [%s] no longer exists on the cloud" % file_path
-        f.delete_meta()
-        print meta_file_path
-        if os.path.exists(file_path):
-          new_path = os.path.join(os.path.dirname(file_path), "deleted.%s" % filename)
-          move(file_path, new_path)
 
 
-  def update(self):
+    #for meta_file_path in self._meta_files:
+    #  file_path = meta_file_path[:len(meta_file_path) - len(META_EXT)]
+    #  filename = os.path.basename(file_path)
+    #  f = File(file_path)
+    #  try:
+    #    cloudcontainer = self.connection.get_container(f.container_name)
+    #    cloudfile = cloudcontainer.get_object(filename) #if not in cloud then mark it as deleted and remove the meta file
+    #    f.cloudfile = cloudfile
+    #    if ((f.local_hash != f.remote_hash) or not os.path.exists(file_path)):
+    #      f.download_from_cloud()
+    #    f.local_owner = f.remote_owner
+    #    # local_modified too?
+    #    if f.uri:
+    #      print f.uri
+    #  except NoSuchContainer:
+    #    print "Container: [%s] doesn't exist on cloud" % f.container_name
+    #  except NoSuchObject:
+    #    print "file: [%s] no longer exists on the cloud" % file_path
+    #    f.delete_meta()
+    #    print meta_file_path
+    #    if os.path.exists(file_path):
+    #      new_path = os.path.join(os.path.dirname(file_path), "deleted.%s" % filename)
+    #      move(file_path, new_path)
+
+
+  def upload_new(self):
     """ Update any that are different. Any that are different and have a different owner; get a copy of the one on server and add "owner_name." in front of it. Any that no longer exist in the cloud rename the file with "deleted." in front of it. """
     for meta_file_path in self._meta_files:
       file_path = meta_file_path[:len(meta_file_path) - len(META_EXT)]
@@ -352,7 +405,7 @@ class Controller(object):
         print "file: [%s] has already been removed from the cloud" % file_path
         f.delete_meta()
   def steal(self):
-    """ set owner name for any files that have a different owner (use 'update' afterwards to update the files) """
+    """ set owner name for any files that have a different owner (use 'upload_new' afterwards to update the files) """
     for meta_file_path in self._meta_files:
       file_path = meta_file_path[:len(meta_file_path) - len(META_EXT)]
       filename = os.path.basename(file_path)
@@ -469,13 +522,17 @@ if __name__ == "__main__":
   def get_files(items, max_level=0):
     " walk through dir and retrieve all files "
     files = []
-    for item in items:
+    restricted_names = ('.svn',)
+    for item in [x for x in items if x not in restricted_names]:
       if os.path.isdir(item):
         for root, dir, file_names in os.walk(item, topdown=True):
-          level = len(root.split('/'))
-          if not max_level or max_level >= level:
-            for f in file_names:
-              files.append(os.path.join(root, f))
+          if ('.svn' not in root):
+            #print root
+            level = len(root.split('/'))
+            if not max_level or max_level >= level:
+              for f in [x for x in file_names if x not in restricted_names]:
+                #print "   %s" % f
+                files.append(os.path.join(root, f))
       else:
         files.append(item)
     return files
@@ -493,10 +550,10 @@ if __name__ == "__main__":
   c.files = files
   if options.action == ACTION_ADD:
     c.add_files(options.container)
-  elif options.action == ACTION_GET_NEW:
-    c.get_new()
-  elif options.action == ACTION_UPDATE:
-    c.update()
+  elif options.action == ACTION_DOWNLOAD_NEW:
+    c.download_new()
+  elif options.action == ACTION_UPLOAD_NEW:
+    c.upload_new()
   elif options.action == ACTION_CLEAN:
     c.clean()
   elif options.action == ACTION_DELETE:
