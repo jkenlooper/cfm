@@ -1,0 +1,3 @@
+[submodule "python-cloudfiles"]
+	path = python-cloudfiles
+	url = git://github.com/rackspace/python-cloudfiles.git
