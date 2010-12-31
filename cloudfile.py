@@ -19,8 +19,9 @@ ACTION_DELETE = 'delete'
 ACTION_STEAL = 'steal'
 ACTION_GET_META_FILES = 'get_meta'
 ACTION_GET_FILE = 'get_file'
+ACTION_CAT_FILE = 'cat_file'
 
-ACTIONS = (ACTION_ADD, ACTION_DOWNLOAD_NEW, ACTION_UPLOAD_NEW, ACTION_CLEAN, ACTION_DELETE, ACTION_STEAL, ACTION_GET_META_FILES, ACTION_GET_FILE)
+ACTIONS = (ACTION_ADD, ACTION_DOWNLOAD_NEW, ACTION_UPLOAD_NEW, ACTION_CLEAN, ACTION_DELETE, ACTION_STEAL, ACTION_GET_META_FILES, ACTION_GET_FILE, ACTION_CAT_FILE)
 
 META_EXT = '.cfm' # cloud file meta | cruddy file management
 HASH_LEN = 32 # len(hashlib.md5("yup").hexdigest())
@@ -54,6 +55,7 @@ class File(object):
     else: # creating a new meta file.
       self._local_modified = 'unknown'
       self.local_hash = 'unknown'
+      self._local_owner_name = 'unknown'
   
   def __del__(self):
     self._pack()
@@ -206,6 +208,10 @@ class File(object):
     print "downloading: %s" % file_path
     self._cloudfile.save_to_filename(file_path)
 
+  def read_from_cloud(self):
+    #print "reading: %s" % self._path_to_file
+    return self._cloudfile.read()
+
 class Controller(object):
   """ a Controller that handles the actions """
   def __init__(self, owner_name, connection):
@@ -352,6 +358,24 @@ class Controller(object):
         f.download_from_cloud()
 
         f.create_meta_file(container_name, self.owner_name)
+
+      except NoSuchContainer:
+        print "Container: [%s] doesn't exist on cloud" % f.container_name
+      except NoSuchObject:
+        print "file: [%s] no longer exists on the cloud"
+
+  def cat_file(self, container_name):
+    """ cat file/s based on the name and container and generate a meta file for each. """
+    for file_path in self._files:
+      filename = os.path.basename(file_path)
+      f = File(file_path)
+      f.container_name = container_name
+      try:
+        cloudcontainer = self.connection.get_container(f.container_name)
+        cloudfile = cloudcontainer.get_object(filename)
+        f.cloudfile = cloudfile
+        f._deleted_meta_file = True # prevents writing of meta file on close
+        return f.read_from_cloud()
 
       except NoSuchContainer:
         print "Container: [%s] doesn't exist on cloud" % f.container_name
@@ -513,7 +537,7 @@ if __name__ == "__main__":
     parser.error("Must specify an action")
   elif not (options.public or options.private or options.referrer) and options.action == ACTION_ADD and not options.container:
     parser.error("Must set a container name")
-  elif (options.public or options.private or options.referrer or options.action in (ACTION_GET_META_FILES, ACTION_GET_FILE)) and not options.container:
+  elif (options.public or options.private or options.referrer or options.action in (ACTION_GET_META_FILES, ACTION_GET_FILE, ACTION_CAT_FILE)) and not options.container:
     parser.error("Must specify a container name")
   elif options.ttl and not options.public:
     parser.error("Must set option --public as well")
@@ -564,6 +588,8 @@ if __name__ == "__main__":
     c.get_meta_files(options.container, args[0])
   elif options.action == ACTION_GET_FILE:
     c.get_file(options.container)
+  elif options.action == ACTION_CAT_FILE:
+    print c.cat_file(options.container)
   else:
     print "unknown action: %s" % options.action
 
