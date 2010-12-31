@@ -4,13 +4,14 @@
 from optparse import OptionParser
 from shutil import move
 import os
-from getpass import getuser
+import os.path
 import time
 import datetime
 import hashlib
 import ConfigParser
 import cloudfiles
 from cloudfiles.errors import NoSuchContainer, NoSuchObject
+from progressbar import FileTransferSpeed, ETA, Bar, Percentage, ProgressBar
 ACTION_ADD = 'add'
 ACTION_DOWNLOAD_NEW = 'download_new'
 ACTION_UPLOAD_NEW = 'upload_new'
@@ -194,8 +195,17 @@ class File(object):
 
   def upload_to_cloud(self):
     """ add the file to the cloud """
-    f = open(self._path_to_file)
-    self._cloudfile.write(f)
+    #f = open(self._path_to_file, 'r')
+    widgets = [FileTransferSpeed(),' <<<', Bar(), '>>> ', Percentage(),' ', ETA()]
+    pbar = ProgressBar(widgets=widgets, maxval=os.path.getsize(self._path_to_file))
+    pbar.start()
+    def progress(transferred, size):
+      pbar.update(transferred)
+      if transferred >= size:
+        pbar.finish()
+        print
+    self._cloudfile.load_from_filename(self._path_to_file, verify=True, callback=progress)
+    #self._cloudfile.send(f)
     m = self._local_modified
     self._cloudfile.metadata["modified"] = m
     h = self.local_hash
@@ -203,10 +213,18 @@ class File(object):
     #TODO: use a callback to track progress of upload
 
   def download_from_cloud(self, file_path=None):
+    widgets = [FileTransferSpeed(),' <<<', Bar(), '>>> ', Percentage(),' ', ETA()]
+    pbar = ProgressBar(widgets=widgets, maxval=self._cloudfile.size)
+    pbar.start()
+    def progress(transferred, size):
+      pbar.update(transferred)
+      if transferred >= size:
+        pbar.finish()
+        print
     if not file_path:
       file_path = self._path_to_file
     print "downloading: %s" % file_path
-    self._cloudfile.save_to_filename(file_path)
+    self._cloudfile.save_to_filename(file_path, progress)
 
   def read_from_cloud(self):
     #print "reading: %s" % self._path_to_file
@@ -504,7 +522,7 @@ if __name__ == "__main__":
   parser.add_option("--config",
       action="store",
       type="string",
-      default="/home/%s/cloudfile.cfg" % getuser(), # better way of doing this?
+      default=os.path.join(os.path.expanduser("~"), "cloudfile.cfg"),
       help="specify a cloud connection config file.")
   parser.add_option("--recursive", "-R",
       action="store_true",

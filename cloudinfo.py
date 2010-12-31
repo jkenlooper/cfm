@@ -3,8 +3,8 @@
 
 import cloudfiles
 import ConfigParser
-from getpass import getuser
 from optparse import OptionParser
+import os.path
 
 if __name__ == "__main__":
   parser = OptionParser(version="%prog 0.1", description="show general info on the cloud")
@@ -14,7 +14,7 @@ if __name__ == "__main__":
   parser.add_option("--config",
       action="store",
       type="string",
-      default="/home/%s/cloudfile.cfg" % getuser(), # better way of doing this?
+      default=os.path.join(os.path.expanduser("~"), "cloudfile.cfg"),
       help="specify a cloud connection config file.")
   parser.add_option("--container", "-c",
       action="store",
