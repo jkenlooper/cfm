@@ -186,7 +186,10 @@ class File(object):
 
   def set_remote_meta(self):
     """ send meta data to the cloud file object """
-    self._cloudfile.sync_metadata()
+    try:
+      self._cloudfile.sync_metadata()
+    except:
+      print "error in set_remote_meta\n"
   
   def delete_meta(self):
     """ delete meta file """
@@ -204,7 +207,10 @@ class File(object):
       if transferred >= size:
         pbar.finish()
         print
-    self._cloudfile.load_from_filename(self._path_to_file, verify=True, callback=progress)
+    try:
+      self._cloudfile.load_from_filename(self._path_to_file, verify=False, callback=progress)
+    except:
+      print "error loading: %s" % self._path_to_file
     #self._cloudfile.send(f)
     m = self._local_modified
     self._cloudfile.metadata["modified"] = m
