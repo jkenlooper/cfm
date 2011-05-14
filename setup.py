@@ -1,7 +1,8 @@
 from setuptools import setup
 
+execfile('src/cfm/_version.py')
 setup(name="cfm",
-    version='0.1.0',
+    version=__version__,
     author='Jake Hickenlooper',
     author_email='jake.hickenlooper@gmail.com',
     description="Cruddy File Management",
@@ -15,6 +16,6 @@ setup(name="cfm",
     entry_points=("""
       [console_scripts]
       cloudfile=cfm:main
+      cloudinfo=cfm:info
       """)
     )
-      #cloudinfo=cfm:info
