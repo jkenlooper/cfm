@@ -1,0 +1,2 @@
+include buildout.cfg
+include example-cloudfile.cfg
