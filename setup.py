@@ -28,11 +28,11 @@ setup(name=name,
         'setuptools',
         'python-cloudfiles',
         'progressbar',
-      ],
+    ],
     include_package_data = True,
     entry_points="""
-      [console_scripts]
-      cloudfile=cfm:main
-      cloudinfo=cfm:info
-      """
+        [console_scripts]
+        cloudfile=cfm:main
+        cloudinfo=cfm:info
+    """
     )
